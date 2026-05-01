@@ -15,10 +15,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.resumeiq.analyzer.dto.AnalyzeResponse;
 
 @Service
-public class GeminiService {
+public class OpenAIService {
 
-    @Value("${gemini.api.key:}")
+    @Value("${openai.api.key:}")
     private String apiKey;
+
+    @Value("${openai.model:gpt-4o-mini}")
+    private String model;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -33,23 +36,26 @@ public class GeminiService {
 
             String requestBody = """
                     {
-                      "contents": [
+                      "model": "%s",
+                      "input": [
                         {
-                          "parts": [
-                            {
-                              "text": %s
-                            }
-                          ]
+                          "role": "system",
+                          "content": "You are an expert ATS resume evaluator and technical recruiter. Return only valid JSON."
+                        },
+                        {
+                          "role": "user",
+                          "content": %s
                         }
-                      ]
+                      ],
+                      "temperature": 0.2
                     }
-                    """.formatted(objectMapper.writeValueAsString(prompt));
+                    """
+                    .formatted(model, objectMapper.writeValueAsString(prompt));
 
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(
-                            "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key="
-                                    + apiKey))
+                    .uri(URI.create("https://api.openai.com/v1/responses"))
                     .header("Content-Type", "application/json")
+                    .header("Authorization", "Bearer " + apiKey)
                     .POST(HttpRequest.BodyPublishers.ofString(requestBody))
                     .build();
 
@@ -57,28 +63,41 @@ public class GeminiService {
 
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                System.out.println("OpenAI Error: " + response.body());
+                return fallbackAnalysis(resumeText, jobDescription);
+            }
+
             JsonNode root = objectMapper.readTree(response.body());
 
-            String aiText = root
-                    .path("candidates")
-                    .get(0)
-                    .path("content")
-                    .path("parts")
-                    .get(0)
-                    .path("text")
-                    .asText();
+            String aiText = extractText(root);
 
             return parseAiResponse(aiText);
 
         } catch (Exception e) {
+            e.printStackTrace();
             return fallbackAnalysis(resumeText, jobDescription);
         }
     }
 
+    private String extractText(JsonNode root) {
+        JsonNode output = root.path("output");
+
+        for (JsonNode item : output) {
+            JsonNode content = item.path("content");
+
+            for (JsonNode c : content) {
+                if (c.path("type").asText().equals("output_text")) {
+                    return c.path("text").asText();
+                }
+            }
+        }
+
+        throw new RuntimeException("No text found in OpenAI response");
+    }
+
     private String buildPrompt(String resumeText, String jobDescription) {
         return """
-                You are an expert ATS resume evaluator and technical recruiter.
-
                 Analyze the resume against the given job description.
 
                 Return ONLY valid JSON. No markdown. No explanation outside JSON.
@@ -92,6 +111,12 @@ public class GeminiService {
                   "suggestions": ["suggestion 1", "suggestion 2", "suggestion 3"],
                   "summary": "short recruiter-style summary"
                 }
+
+                Scoring rules:
+                - 90-100: excellent match
+                - 75-89: strong match
+                - 60-74: decent match
+                - below 60: weak match
 
                 Resume:
                 %s
@@ -120,7 +145,7 @@ public class GeminiService {
                     .build();
 
         } catch (Exception e) {
-            throw new RuntimeException("Failed to parse AI response");
+            throw new RuntimeException("Failed to parse OpenAI response");
         }
     }
 

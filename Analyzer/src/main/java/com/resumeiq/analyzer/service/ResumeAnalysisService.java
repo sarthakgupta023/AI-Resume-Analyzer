@@ -17,7 +17,7 @@ import lombok.RequiredArgsConstructor;
 public class ResumeAnalysisService {
 
     private final PdfService pdfService;
-    private final GeminiService geminiService;
+    private final OpenAIService openAIService;
     private final AnalysisRepository analysisRepository;
 
     public AnalyzeResponse analyze(
@@ -31,7 +31,7 @@ public class ResumeAnalysisService {
 
         String resumeText = pdfService.extractText(file);
 
-        AnalyzeResponse response = geminiService.analyzeResume(resumeText, jobDescription);
+        AnalyzeResponse response = openAIService.analyzeResume(resumeText, jobDescription);
 
         Analysis analysis = Analysis.builder()
                 .userEmail(userEmail)
