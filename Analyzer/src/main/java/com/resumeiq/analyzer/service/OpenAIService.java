@@ -54,7 +54,7 @@ public class OpenAIService {
 
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(
-                            "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key="
+                            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key="
                                     + apiKey))
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(requestBody))
