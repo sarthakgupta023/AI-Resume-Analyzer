@@ -36,21 +36,21 @@ public class OpenAIService {
 
             String requestBody = """
                     {
-                      "model": "%s",
-                      "input": [
+                      "contents": [
                         {
-                          "role": "system",
-                          "content": "You are an expert ATS resume evaluator and technical recruiter. Return only valid JSON."
-                        },
-                        {
-                          "role": "user",
-                          "content": %s
+                          "parts": [
+                            {
+                              "text": %s
+                            }
+                          ]
                         }
                       ],
-                      "temperature": 0.2
+                      "generationConfig": {
+                        "temperature": 0.2
+                      }
                     }
                     """
-                    .formatted(model, objectMapper.writeValueAsString(prompt));
+                    .formatted(objectMapper.writeValueAsString(prompt));
 
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(
