@@ -6,41 +6,48 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.resumeiq.analyzer.dto.AnalyzeResponse;
+import com.resumeiq.analyzer.model.Analysis;
+import com.resumeiq.analyzer.repository.AnalysisRepository;
+
+import lombok.RequiredArgsConstructor;
+
 @Service
+@RequiredArgsConstructor
 public class ResumeAnalysisService {
 
     private final PdfService pdfService;
     private final OpenAIService openAIService;
     private final AnalysisRepository analysisRepository;
 
-    public ResumeAnalysisService(PdfService pdfService, OpenAIService openAIService,
-            AnalysisRepository analysisRepository) {
-        this.pdfService = pdfService;
-        this.openAIService = openAIService;
-        this.analysisRepository = analysisRepository;
-    }
+    public AnalyzeResponse analyze(
+            MultipartFile file,
+            String jobDescription,
+            String userEmail) {
 
-    public AnalyzeResponse analyze(MultipartFile file, String jobDescription, String userEmail) {
         if (jobDescription == null || jobDescription.trim().isEmpty()) {
             throw new RuntimeException("Job description is required");
         }
 
         String resumeText = pdfService.extractText(file);
+
         AnalyzeResponse response = openAIService.analyzeResume(resumeText, jobDescription);
 
-        Analysis analysis = new Analysis();
-        analysis.setUserEmail(userEmail);
-        analysis.setFileName(file.getOriginalFilename());
-        analysis.setJobDescription(jobDescription);
-        analysis.setAtsScore(response.getAtsScore());
-        analysis.setStrengths(response.getStrengths());
-        analysis.setWeaknesses(response.getWeaknesses());
-        analysis.setMissingSkills(response.getMissingSkills());
-        analysis.setSuggestions(response.getSuggestions());
-        analysis.setSummary(response.getSummary());
-        analysis.setCreatedAt(LocalDateTime.now());
+        Analysis analysis = Analysis.builder()
+                .userEmail(userEmail)
+                .fileName(file.getOriginalFilename())
+                .jobDescription(jobDescription)
+                .atsScore(response.getAtsScore())
+                .strengths(response.getStrengths())
+                .weaknesses(response.getWeaknesses())
+                .missingSkills(response.getMissingSkills())
+                .suggestions(response.getSuggestions())
+                .summary(response.getSummary())
+                .createdAt(LocalDateTime.now())
+                .build();
 
         analysisRepository.save(analysis);
+
         return response;
     }
 

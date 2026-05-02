@@ -1,33 +1,75 @@
 package com.resumeiq.analyzer.service;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.util.Arrays;
 import java.util.List;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.resumeiq.analyzer.dto.AnalyzeResponse;
 
 @Service
 public class OpenAIService {
 
-    private final ChatClient chatClient;
+    @Value("${openai.api.key:}")
+    private String apiKey;
+
+    @Value("${openai.model:gpt-4o-mini}")
+    private String model;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public OpenAIService(ChatClient chatClient) {
-        this.chatClient = chatClient;
-    }
-
     public AnalyzeResponse analyzeResume(String resumeText, String jobDescription) {
+
+        if (apiKey == null || apiKey.isBlank()) {
+            return fallbackAnalysis(resumeText, jobDescription);
+        }
 
         try {
             String prompt = buildPrompt(resumeText, jobDescription);
 
-            String aiText = chatClient.prompt()
-                    .system("You are an expert ATS resume evaluator and technical recruiter. Return only valid JSON.")
-                    .user(prompt)
-                    .call()
-                    .content();
+            String requestBody = """
+                    {
+                      "model": "%s",
+                      "input": [
+                        {
+                          "role": "system",
+                          "content": "You are an expert ATS resume evaluator and technical recruiter. Return only valid JSON."
+                        },
+                        {
+                          "role": "user",
+                          "content": %s
+                        }
+                      ],
+                      "temperature": 0.2
+                    }
+                    """
+                    .formatted(model, objectMapper.writeValueAsString(prompt));
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api.openai.com/v1/responses"))
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", "Bearer " + apiKey)
+                    .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                    .build();
+
+            HttpClient client = HttpClient.newHttpClient();
+
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                System.out.println("OpenAI Error: " + response.body());
+                return fallbackAnalysis(resumeText, jobDescription);
+            }
+
+            JsonNode root = objectMapper.readTree(response.body());
+            String aiText = extractText(root);
 
             return parseAiResponse(aiText);
 
@@ -35,6 +77,22 @@ public class OpenAIService {
             e.printStackTrace();
             return fallbackAnalysis(resumeText, jobDescription);
         }
+    }
+
+    private String extractText(JsonNode root) {
+        JsonNode output = root.path("output");
+
+        for (JsonNode item : output) {
+            JsonNode content = item.path("content");
+
+            for (JsonNode c : content) {
+                if ("output_text".equals(c.path("type").asText())) {
+                    return c.path("text").asText();
+                }
+            }
+        }
+
+        throw new RuntimeException("No text found in OpenAI response");
     }
 
     private String buildPrompt(String resumeText, String jobDescription) {
@@ -52,12 +110,6 @@ public class OpenAIService {
                   "suggestions": ["suggestion 1", "suggestion 2", "suggestion 3"],
                   "summary": "short recruiter-style summary"
                 }
-
-                Scoring rules:
-                - 90-100: excellent match
-                - 75-89: strong match
-                - 60-74: decent match
-                - below 60: weak match
 
                 Resume:
                 %s
