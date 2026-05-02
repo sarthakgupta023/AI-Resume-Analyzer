@@ -1,10 +1,10 @@
 import {
-    FileText,
-    Loader2,
-    ShieldCheck,
-    Sparkles,
-    Target,
-    UploadCloud,
+  FileText,
+  Loader2,
+  ShieldCheck,
+  Sparkles,
+  Target,
+  UploadCloud,
 } from "lucide-react";
 import { useState } from "react";
 import API from "../api/api";
@@ -40,7 +40,7 @@ function Dashboard() {
       formData.append("file", file);
       formData.append("jobDescription", jobDescription);
 
-      const res = await API.post("/analyze", formData, {
+      const res = await API.post("/api/analyze", formData, {
         headers: {
           "Content-Type": "multipart/form-data",
         },
